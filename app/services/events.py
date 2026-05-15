@@ -22,3 +22,6 @@ class EventPublisher:
 
     def publish_extraction_requested(self, topic_name: str, payload: dict) -> None:
         self.publish(topic_name, payload)
+
+    def publish_validation_requested(self, topic_name: str, payload: dict) -> None:
+        self.publish(topic_name, payload)

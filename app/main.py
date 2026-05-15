@@ -12,6 +12,7 @@ from app.services.ocr import OcrService
 from app.services.preprocess import PreprocessService
 from app.services.pubsub import PubSubMessageError
 from app.services.storage import StorageService
+from app.services.validation import ValidationService
 
 
 app = FastAPI(title="Document Pipeline Lab")
@@ -139,6 +140,17 @@ def extract_document(envelope: dict) -> dict[str, str]:
     try:
         settings()
         return ExtractionService().handle_pubsub_push(envelope)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except PubSubMessageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/workers/validate")
+def validate_document(envelope: dict) -> dict[str, str]:
+    try:
+        settings()
+        return ValidationService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:

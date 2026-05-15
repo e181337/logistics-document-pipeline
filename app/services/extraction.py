@@ -4,10 +4,17 @@ from typing import Any
 
 from app.gcp_clients import genai_client, settings
 from app.repositories import DocumentRepository
+from app.services.events import EventPublisher
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 
 
-TERMINAL_EXTRACTION_STATUSES = {"EXTRACTION_COMPLETED"}
+TERMINAL_EXTRACTION_STATUSES = {
+    "EXTRACTION_COMPLETED",
+    "VALIDATION_PROCESSING",
+    "VALIDATION_COMPLETED",
+    "VALIDATION_COMPLETED_WITH_WARNINGS",
+    "NEEDS_REVIEW",
+}
 
 BILL_OF_LADING_SCHEMA = {
     "type": "OBJECT",
@@ -88,6 +95,7 @@ class ExtractionService:
     def __init__(self) -> None:
         self.repository = DocumentRepository()
         self.genai = genai_client()
+        self.event_publisher = EventPublisher()
 
     def handle_pubsub_push(self, envelope: dict[str, Any]) -> dict[str, str]:
         payload = decode_pubsub_payload(envelope)
@@ -126,6 +134,15 @@ class ExtractionService:
                     "document_type": fields.get("document_type", "bill_of_lading"),
                     "fields": fields,
                 },
+            },
+        )
+
+        self.event_publisher.publish_validation_requested(
+            topic_name=settings().pubsub_validation_requested_topic,
+            payload={
+                "document_id": document_id,
+                "tenant_id": document["tenant_id"],
+                "trace_id": document.get("trace_id", ""),
             },
         )
 

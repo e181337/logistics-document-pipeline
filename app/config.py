@@ -14,6 +14,7 @@ class Settings:
     pubsub_document_uploaded_topic: str
     pubsub_ocr_requested_topic: str
     pubsub_extraction_requested_topic: str
+    pubsub_validation_requested_topic: str
     firestore_document_collection: str = "documents"
     firestore_database: str = "(default)"
     vertex_ai_location: str = "global"
@@ -37,6 +38,10 @@ def get_settings() -> Settings:
             "PUBSUB_EXTRACTION_REQUESTED_TOPIC",
             "extraction.requested",
         ),
+        pubsub_validation_requested_topic=os.getenv(
+            "PUBSUB_VALIDATION_REQUESTED_TOPIC",
+            "validation.requested",
+        ),
         firestore_document_collection=os.getenv(
             "FIRESTORE_DOCUMENT_COLLECTION",
             "documents",
@@ -56,6 +61,7 @@ def validate_settings(settings: Settings) -> None:
             ("PUBSUB_DOCUMENT_UPLOADED_TOPIC", settings.pubsub_document_uploaded_topic),
             ("PUBSUB_OCR_REQUESTED_TOPIC", settings.pubsub_ocr_requested_topic),
             ("PUBSUB_EXTRACTION_REQUESTED_TOPIC", settings.pubsub_extraction_requested_topic),
+            ("PUBSUB_VALIDATION_REQUESTED_TOPIC", settings.pubsub_validation_requested_topic),
         )
         if not value
     ]

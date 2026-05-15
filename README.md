@@ -15,6 +15,8 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Run OCR with Google Cloud Vision and store extracted text in Firestore.
 - Publish an `extraction.requested` event after OCR.
 - Extract Bill of Lading fields from OCR text with Gemini structured JSON output and store them in Firestore.
+- Publish a `validation.requested` event after extraction.
+- Run deterministic validation rules and route documents to completed or review states.
 
 ## Architecture
 
@@ -34,6 +36,10 @@ POST /invoices
   -> Push subscription
   -> POST /workers/extract
   -> Firestore status: EXTRACTION_COMPLETED
+  -> Pub/Sub topic: validation.requested
+  -> Push subscription
+  -> POST /workers/validate
+  -> Firestore status: VALIDATION_COMPLETED | VALIDATION_COMPLETED_WITH_WARNINGS | NEEDS_REVIEW
 ```
 
 ## Endpoints
@@ -45,6 +51,7 @@ GET  /documents/{document_id}
 POST /workers/preprocess
 POST /workers/ocr
 POST /workers/extract
+POST /workers/validate
 ```
 
 Worker endpoints expect the standard Pub/Sub push payload shape.
@@ -100,6 +107,7 @@ GCS_UPLOAD_BUCKET=your-upload-bucket
 PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded
 PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested
 PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested
+PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested
 FIRESTORE_DOCUMENT_COLLECTION=documents
 FIRESTORE_DATABASE=(default)
 VERTEX_AI_LOCATION=global
@@ -125,7 +133,7 @@ gcloud run deploy document-pipeline-api \
   --source . \
   --region europe-west3 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
+  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
 ```
 
 After deployment, create Pub/Sub push subscriptions:
@@ -145,6 +153,11 @@ Topic: extraction.requested
 Subscription ID: extraction-worker-sub
 Delivery type: Push
 Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/extract
+
+Topic: validation.requested
+Subscription ID: validation-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/validate
 ```
 
 ## Sample Document
@@ -221,6 +234,25 @@ After Pub/Sub triggers extraction:
       },
       "total_weight": "2,520 kg"
     }
+  }
+}
+```
+
+After Pub/Sub triggers validation:
+
+```json
+{
+  "status": "VALIDATION_COMPLETED_WITH_WARNINGS",
+  "validation": {
+    "method": "deterministic_rules_v1",
+    "issue_count": 2,
+    "issues": [
+      {
+        "field": "ship_to.city_state_zip",
+        "severity": "warning",
+        "code": "postal_code_missing_or_suspicious"
+      }
+    ]
   }
 }
 ```
