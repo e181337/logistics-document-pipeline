@@ -3,6 +3,7 @@ from functools import lru_cache
 from google.cloud import firestore
 from google.cloud import pubsub_v1
 from google.cloud import storage
+from google.cloud import vision
 
 from app.config import Settings, get_settings, validate_settings
 
@@ -33,6 +34,10 @@ def pubsub_publisher() -> pubsub_v1.PublisherClient:
     return pubsub_v1.PublisherClient()
 
 
+@lru_cache
+def vision_client() -> vision.ImageAnnotatorClient:
+    return vision.ImageAnnotatorClient()
+
+
 def topic_path(topic_name: str) -> str:
     return pubsub_publisher().topic_path(settings().gcp_project_id, topic_name)
-

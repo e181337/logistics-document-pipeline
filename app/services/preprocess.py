@@ -1,26 +1,24 @@
-import base64
 import io
-import json
 from datetime import datetime, timezone
 from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
+from app.gcp_clients import settings
 from app.repositories import DocumentRepository
+from app.services.events import EventPublisher
+from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.storage import StorageService
 
 
-TERMINAL_PREPROCESS_STATUSES = {"PREPROCESSED"}
-
-
-class PubSubMessageError(ValueError):
-    pass
+TERMINAL_PREPROCESS_STATUSES = {"PREPROCESSED", "OCR_PROCESSING", "OCR_COMPLETED", "OCR_SKIPPED"}
 
 
 class PreprocessService:
     def __init__(self) -> None:
         self.repository = DocumentRepository()
         self.storage = StorageService()
+        self.event_publisher = EventPublisher()
 
     def handle_pubsub_push(self, envelope: dict[str, Any]) -> dict[str, str]:
         payload = decode_pubsub_payload(envelope)
@@ -65,6 +63,17 @@ class PreprocessService:
             },
         )
 
+        self.event_publisher.publish_ocr_requested(
+            topic_name=settings().pubsub_ocr_requested_topic,
+            payload={
+                "document_id": document_id,
+                "tenant_id": document["tenant_id"],
+                "file_uri": file_uri,
+                "content_type": metadata.content_type,
+                "trace_id": document.get("trace_id", ""),
+            },
+        )
+
         return {"document_id": document_id, "status": "PREPROCESSED"}
 
     def inspect_document(self, file_uri: str, content_type: str | None) -> dict[str, Any]:
@@ -94,32 +103,3 @@ class PreprocessService:
         return {
             "document_kind": "unknown",
         }
-
-
-def decode_pubsub_payload(envelope: dict[str, Any]) -> dict[str, Any]:
-    message = envelope.get("message")
-    if not isinstance(message, dict):
-        raise PubSubMessageError("Missing Pub/Sub message")
-
-    encoded_data = message.get("data")
-    if not isinstance(encoded_data, str):
-        raise PubSubMessageError("Missing Pub/Sub message data")
-
-    try:
-        decoded = base64.b64decode(encoded_data).decode("utf-8")
-        payload = json.loads(decoded)
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise PubSubMessageError("Invalid Pub/Sub message data") from exc
-
-    if not isinstance(payload, dict):
-        raise PubSubMessageError("Pub/Sub payload must be an object")
-
-    return payload
-
-
-def require_value(payload: dict[str, Any], key: str) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str) or not value:
-        raise PubSubMessageError(f"Missing required field: {key}")
-
-    return value

@@ -7,7 +7,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
-from app.services.preprocess import PreprocessService, PubSubMessageError
+from app.services.ocr import OcrService
+from app.services.preprocess import PreprocessService
+from app.services.pubsub import PubSubMessageError
 from app.services.storage import StorageService
 
 
@@ -114,6 +116,17 @@ def preprocess_document(envelope: dict) -> dict[str, str]:
     try:
         settings()
         return PreprocessService().handle_pubsub_push(envelope)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except PubSubMessageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/workers/ocr")
+def ocr_document(envelope: dict) -> dict[str, str]:
+    try:
+        settings()
+        return OcrService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:

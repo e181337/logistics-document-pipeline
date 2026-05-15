@@ -11,6 +11,8 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Process the Pub/Sub message with a Cloud Run worker endpoint.
 - Update Firestore status from `UPLOADED` to `PREPROCESSED`.
 - Extract basic preprocess metadata such as image width, height, format, and page count.
+- Publish an `ocr.requested` event after preprocess.
+- Run OCR with Google Cloud Vision and store extracted text in Firestore.
 
 ## Architecture
 
@@ -22,6 +24,10 @@ POST /invoices
   -> Push subscription
   -> POST /workers/preprocess
   -> Firestore status: PREPROCESSED
+  -> Pub/Sub topic: ocr.requested
+  -> Push subscription
+  -> POST /workers/ocr
+  -> Firestore status: OCR_COMPLETED
 ```
 
 ## Endpoints
@@ -31,9 +37,10 @@ GET  /health
 POST /invoices
 GET  /documents/{document_id}
 POST /workers/preprocess
+POST /workers/ocr
 ```
 
-`POST /workers/preprocess` expects the standard Pub/Sub push payload shape.
+Worker endpoints expect the standard Pub/Sub push payload shape.
 
 ## Local Setup
 
@@ -84,6 +91,7 @@ Create `.env`:
 GCP_PROJECT_ID=your-project-id
 GCS_UPLOAD_BUCKET=your-upload-bucket
 PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded
+PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested
 FIRESTORE_DOCUMENT_COLLECTION=documents
 FIRESTORE_DATABASE=(default)
 ```
@@ -97,6 +105,7 @@ If using a named Firestore database, set `FIRESTORE_DATABASE` to that database I
 - Pub/Sub topic
 - Pub/Sub push subscription
 - Cloud Run service
+- Vision API enabled
 
 ## Cloud Run Deploy
 
@@ -105,16 +114,21 @@ gcloud run deploy document-pipeline-api \
   --source . \
   --region europe-west3 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database
+  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database
 ```
 
-After deployment, create a Pub/Sub push subscription:
+After deployment, create Pub/Sub push subscriptions:
 
 ```text
 Topic: document.uploaded
 Subscription ID: preprocess-worker-sub
 Delivery type: Push
 Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/preprocess
+
+Topic: ocr.requested
+Subscription ID: ocr-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/ocr
 ```
 
 ## Sample Document
@@ -152,6 +166,19 @@ After Pub/Sub triggers preprocess:
     "image_height": 2500,
     "image_format": "PNG",
     "page_count": 1
+  }
+}
+```
+
+After Pub/Sub triggers OCR:
+
+```json
+{
+  "status": "OCR_COMPLETED",
+  "ocr": {
+    "provider": "google_cloud_vision",
+    "text": "BILL OF LADING...",
+    "text_length": 1234
   }
 }
 ```

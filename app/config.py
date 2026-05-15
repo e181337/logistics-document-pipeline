@@ -12,6 +12,7 @@ class Settings:
     gcp_project_id: str
     gcs_upload_bucket: str
     pubsub_document_uploaded_topic: str
+    pubsub_ocr_requested_topic: str
     firestore_document_collection: str = "documents"
     firestore_database: str = "(default)"
 
@@ -24,6 +25,10 @@ def get_settings() -> Settings:
         pubsub_document_uploaded_topic=os.getenv(
             "PUBSUB_DOCUMENT_UPLOADED_TOPIC",
             "document.uploaded",
+        ),
+        pubsub_ocr_requested_topic=os.getenv(
+            "PUBSUB_OCR_REQUESTED_TOPIC",
+            "ocr.requested",
         ),
         firestore_document_collection=os.getenv(
             "FIRESTORE_DOCUMENT_COLLECTION",
@@ -40,10 +45,10 @@ def validate_settings(settings: Settings) -> None:
             ("GCP_PROJECT_ID", settings.gcp_project_id),
             ("GCS_UPLOAD_BUCKET", settings.gcs_upload_bucket),
             ("PUBSUB_DOCUMENT_UPLOADED_TOPIC", settings.pubsub_document_uploaded_topic),
+            ("PUBSUB_OCR_REQUESTED_TOPIC", settings.pubsub_ocr_requested_topic),
         )
         if not value
     ]
     if missing:
         joined = ", ".join(missing)
         raise RuntimeError(f"Missing required environment variables: {joined}")
-
