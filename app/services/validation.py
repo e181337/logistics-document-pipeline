@@ -4,6 +4,7 @@ from typing import Any
 
 from app.repositories import DocumentRepository
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
+from app.services.review import ReviewTaskService
 
 
 TERMINAL_VALIDATION_STATUSES = {
@@ -16,6 +17,7 @@ TERMINAL_VALIDATION_STATUSES = {
 class ValidationService:
     def __init__(self) -> None:
         self.repository = DocumentRepository()
+        self.review_tasks = ReviewTaskService()
 
     def handle_pubsub_push(self, envelope: dict[str, Any]) -> dict[str, str]:
         payload = decode_pubsub_payload(envelope)
@@ -42,18 +44,21 @@ class ValidationService:
 
         issues = validate_bill_of_lading(extraction["fields"])
         final_status = validation_status(issues)
+        review_task_id = self.review_tasks.create_for_validation_issues(document, issues)
         completed_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
             {
                 "status": final_status,
                 "updated_at": completed_at,
+                "review_task_id": review_task_id,
                 "validation": {
                     "processed_at": completed_at,
                     "method": "deterministic_rules_v1",
                     "status": final_status,
                     "issues": issues,
                     "issue_count": len(issues),
+                    "review_task_id": review_task_id,
                 },
             },
         )

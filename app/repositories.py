@@ -22,3 +22,23 @@ class DocumentRepository:
             return None
 
         return document
+
+
+class ReviewTaskRepository:
+    def __init__(self) -> None:
+        self.collection_name = settings().firestore_review_task_collection
+        self.collection = firestore_client().collection(self.collection_name)
+
+    def create(self, review_task_id: str, payload: dict) -> None:
+        self.collection.document(review_task_id).set(payload)
+
+    def get(self, review_task_id: str) -> dict | None:
+        snapshot = self.collection.document(review_task_id).get()
+        if not snapshot.exists:
+            return None
+
+        task = snapshot.to_dict()
+        if task is None:
+            return None
+
+        return task

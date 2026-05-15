@@ -17,6 +17,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Extract Bill of Lading fields from OCR text with Gemini structured JSON output and store them in Firestore.
 - Publish a `validation.requested` event after extraction.
 - Run deterministic validation rules and route documents to completed or review states.
+- Create a Firestore review task when validation returns warnings or errors.
 
 ## Architecture
 
@@ -40,6 +41,7 @@ POST /invoices
   -> Push subscription
   -> POST /workers/validate
   -> Firestore status: VALIDATION_COMPLETED | VALIDATION_COMPLETED_WITH_WARNINGS | NEEDS_REVIEW
+  -> Firestore review_tasks record when review is required
 ```
 
 ## Endpoints
@@ -48,6 +50,7 @@ POST /invoices
 GET  /health
 POST /invoices
 GET  /documents/{document_id}
+GET  /review-tasks/{review_task_id}
 POST /workers/preprocess
 POST /workers/ocr
 POST /workers/extract
@@ -109,6 +112,7 @@ PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested
 PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested
 PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested
 FIRESTORE_DOCUMENT_COLLECTION=documents
+FIRESTORE_REVIEW_TASK_COLLECTION=review_tasks
 FIRESTORE_DATABASE=(default)
 VERTEX_AI_LOCATION=global
 GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
@@ -133,7 +137,7 @@ gcloud run deploy document-pipeline-api \
   --source . \
   --region europe-west3 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
+  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_REVIEW_TASK_COLLECTION=review_tasks,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
 ```
 
 After deployment, create Pub/Sub push subscriptions:
@@ -245,6 +249,7 @@ After Pub/Sub triggers validation:
   "status": "VALIDATION_COMPLETED_WITH_WARNINGS",
   "validation": {
     "method": "deterministic_rules_v1",
+    "review_task_id": "review_abc123",
     "issue_count": 2,
     "issues": [
       {
@@ -254,5 +259,18 @@ After Pub/Sub triggers validation:
       }
     ]
   }
+}
+```
+
+Review task:
+
+```json
+{
+  "review_task_id": "review_abc123",
+  "document_id": "doc_abc123",
+  "status": "OPEN",
+  "priority": "normal",
+  "reason": "validation_issues",
+  "issues": []
 }
 ```

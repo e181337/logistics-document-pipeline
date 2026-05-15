@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.gcp_clients import settings
-from app.repositories import DocumentRepository
+from app.repositories import DocumentRepository, ReviewTaskRepository
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.ocr import OcrService
@@ -111,6 +111,20 @@ def get_document(document_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Document not found")
 
     return document
+
+
+@app.get("/review-tasks/{review_task_id}")
+def get_review_task(review_task_id: str) -> dict:
+    try:
+        settings()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    review_task = ReviewTaskRepository().get(review_task_id)
+    if review_task is None:
+        raise HTTPException(status_code=404, detail="Review task not found")
+
+    return review_task
 
 
 @app.post("/workers/preprocess")
