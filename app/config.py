@@ -13,8 +13,11 @@ class Settings:
     gcs_upload_bucket: str
     pubsub_document_uploaded_topic: str
     pubsub_ocr_requested_topic: str
+    pubsub_extraction_requested_topic: str
     firestore_document_collection: str = "documents"
     firestore_database: str = "(default)"
+    vertex_ai_location: str = "global"
+    gemini_extraction_model: str = "gemini-2.5-flash"
 
 
 
@@ -30,11 +33,17 @@ def get_settings() -> Settings:
             "PUBSUB_OCR_REQUESTED_TOPIC",
             "ocr.requested",
         ),
+        pubsub_extraction_requested_topic=os.getenv(
+            "PUBSUB_EXTRACTION_REQUESTED_TOPIC",
+            "extraction.requested",
+        ),
         firestore_document_collection=os.getenv(
             "FIRESTORE_DOCUMENT_COLLECTION",
             "documents",
         ),
         firestore_database=os.getenv("FIRESTORE_DATABASE", "(default)"),
+        vertex_ai_location=os.getenv("VERTEX_AI_LOCATION", "global"),
+        gemini_extraction_model=os.getenv("GEMINI_EXTRACTION_MODEL", "gemini-2.5-flash"),
     )
 
 
@@ -46,6 +55,7 @@ def validate_settings(settings: Settings) -> None:
             ("GCS_UPLOAD_BUCKET", settings.gcs_upload_bucket),
             ("PUBSUB_DOCUMENT_UPLOADED_TOPIC", settings.pubsub_document_uploaded_topic),
             ("PUBSUB_OCR_REQUESTED_TOPIC", settings.pubsub_ocr_requested_topic),
+            ("PUBSUB_EXTRACTION_REQUESTED_TOPIC", settings.pubsub_extraction_requested_topic),
         )
         if not value
     ]

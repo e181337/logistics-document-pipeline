@@ -13,6 +13,8 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Extract basic preprocess metadata such as image width, height, format, and page count.
 - Publish an `ocr.requested` event after preprocess.
 - Run OCR with Google Cloud Vision and store extracted text in Firestore.
+- Publish an `extraction.requested` event after OCR.
+- Extract Bill of Lading fields from OCR text with Gemini structured JSON output and store them in Firestore.
 
 ## Architecture
 
@@ -28,6 +30,10 @@ POST /invoices
   -> Push subscription
   -> POST /workers/ocr
   -> Firestore status: OCR_COMPLETED
+  -> Pub/Sub topic: extraction.requested
+  -> Push subscription
+  -> POST /workers/extract
+  -> Firestore status: EXTRACTION_COMPLETED
 ```
 
 ## Endpoints
@@ -38,6 +44,7 @@ POST /invoices
 GET  /documents/{document_id}
 POST /workers/preprocess
 POST /workers/ocr
+POST /workers/extract
 ```
 
 Worker endpoints expect the standard Pub/Sub push payload shape.
@@ -92,8 +99,11 @@ GCP_PROJECT_ID=your-project-id
 GCS_UPLOAD_BUCKET=your-upload-bucket
 PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded
 PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested
+PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested
 FIRESTORE_DOCUMENT_COLLECTION=documents
 FIRESTORE_DATABASE=(default)
+VERTEX_AI_LOCATION=global
+GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
 ```
 
 If using a named Firestore database, set `FIRESTORE_DATABASE` to that database ID.
@@ -106,6 +116,7 @@ If using a named Firestore database, set `FIRESTORE_DATABASE` to that database I
 - Pub/Sub push subscription
 - Cloud Run service
 - Vision API enabled
+- Vertex AI / Gemini API enabled
 
 ## Cloud Run Deploy
 
@@ -114,7 +125,7 @@ gcloud run deploy document-pipeline-api \
   --source . \
   --region europe-west3 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database
+  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
 ```
 
 After deployment, create Pub/Sub push subscriptions:
@@ -129,6 +140,11 @@ Topic: ocr.requested
 Subscription ID: ocr-worker-sub
 Delivery type: Push
 Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/ocr
+
+Topic: extraction.requested
+Subscription ID: extraction-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/extract
 ```
 
 ## Sample Document
@@ -179,6 +195,32 @@ After Pub/Sub triggers OCR:
     "provider": "google_cloud_vision",
     "text": "BILL OF LADING...",
     "text_length": 1234
+  }
+}
+```
+
+After Pub/Sub triggers extraction:
+
+```json
+{
+  "status": "EXTRACTION_COMPLETED",
+  "extraction": {
+    "method": "llm_gemini_v1",
+    "model": "gemini-2.5-flash",
+    "document_type": "bill_of_lading",
+    "fields": {
+      "bill_of_lading_number": "BOL-2026-0515-0007",
+      "ship_from": {
+        "name": "Anatolia Export GmbH"
+      },
+      "ship_to": {
+        "name": "Bosphorus Retail A.S."
+      },
+      "carrier": {
+        "name": "Rhine Freight Logistics"
+      },
+      "total_weight": "2,520 kg"
+    }
   }
 }
 ```

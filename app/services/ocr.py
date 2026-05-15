@@ -3,12 +3,19 @@ from typing import Any
 
 from google.cloud import vision
 
+from app.gcp_clients import settings
 from app.gcp_clients import vision_client
 from app.repositories import DocumentRepository
+from app.services.events import EventPublisher
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 
 
-TERMINAL_OCR_STATUSES = {"OCR_COMPLETED", "OCR_SKIPPED"}
+TERMINAL_OCR_STATUSES = {
+    "OCR_COMPLETED",
+    "OCR_SKIPPED",
+    "EXTRACTION_PROCESSING",
+    "EXTRACTION_COMPLETED",
+}
 SUPPORTED_OCR_CONTENT_TYPES = {"image/png", "image/jpeg", "image/tiff"}
 
 
@@ -16,6 +23,7 @@ class OcrService:
     def __init__(self) -> None:
         self.repository = DocumentRepository()
         self.vision = vision_client()
+        self.event_publisher = EventPublisher()
 
     def handle_pubsub_push(self, envelope: dict[str, Any]) -> dict[str, str]:
         payload = decode_pubsub_payload(envelope)
@@ -67,6 +75,16 @@ class OcrService:
                     "text": text,
                     "text_length": len(text),
                 },
+            },
+        )
+
+        self.event_publisher.publish_extraction_requested(
+            topic_name=settings().pubsub_extraction_requested_topic,
+            payload={
+                "document_id": document_id,
+                "tenant_id": document["tenant_id"],
+                "file_uri": file_uri,
+                "trace_id": document.get("trace_id", ""),
             },
         )
 

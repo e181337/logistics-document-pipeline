@@ -11,7 +11,14 @@ from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, requi
 from app.services.storage import StorageService
 
 
-TERMINAL_PREPROCESS_STATUSES = {"PREPROCESSED", "OCR_PROCESSING", "OCR_COMPLETED", "OCR_SKIPPED"}
+TERMINAL_PREPROCESS_STATUSES = {
+    "PREPROCESSED",
+    "OCR_PROCESSING",
+    "OCR_COMPLETED",
+    "OCR_SKIPPED",
+    "EXTRACTION_PROCESSING",
+    "EXTRACTION_COMPLETED",
+}
 
 
 class PreprocessService:
