@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config and credentials
+.env
+*.local
+*.log
+
+# macOS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Test/build artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
