@@ -54,6 +54,7 @@ POST /invoices
 GET  /health
 POST /invoices
 GET  /documents/{document_id}
+POST /documents/{document_id}/retry
 GET  /review-tasks/{review_task_id}
 POST /review-tasks/{review_task_id}/resolve
 POST /workers/preprocess
@@ -422,6 +423,25 @@ APPROVED
 APPROVED_WITH_WARNINGS
 CORRECTED
 REJECTED
+```
+
+Retry a document step:
+
+```bash
+curl -X POST http://127.0.0.1:8000/documents/doc_abc123/retry \
+  -H "Content-Type: application/json" \
+  -d '{
+    "step": "ocr"
+  }'
+```
+
+Retryable steps:
+
+```text
+preprocess
+ocr
+extraction
+validation
 ```
 
 After review resolution:

@@ -74,6 +74,17 @@ def mark_step_failed(step: str, now: datetime, error: str) -> dict[str, Any]:
     }
 
 
+def mark_step_retry_requested(step: str, now: datetime) -> dict[str, Any]:
+    return {
+        "workflow.current_step": step,
+        "workflow.status": "running",
+        "workflow.updated_at": now,
+        f"workflow.steps.{step}.status": "retry_requested",
+        f"workflow.steps.{step}.retry_requested_at": now,
+        f"workflow.steps.{step}.updated_at": now,
+    }
+
+
 def mark_review_waiting(now: datetime, review_task_id: str | None) -> dict[str, Any]:
     return {
         "workflow.current_step": "review",

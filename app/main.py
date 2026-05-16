@@ -13,6 +13,7 @@ from app.services.ocr import OcrService
 from app.services.preprocess import PreprocessService
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload
 from app.services.review import ReviewTaskError, ReviewTaskService
+from app.services.retry import RetryRequestError, RetryService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
 from app.services.workflow import initial_workflow, mark_step_failed
@@ -115,6 +116,17 @@ def get_document(document_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Document not found")
 
     return document
+
+
+@app.post("/documents/{document_id}/retry")
+def retry_document_step(document_id: str, payload: dict) -> dict[str, str]:
+    try:
+        settings()
+        return RetryService().retry(document_id, payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except RetryRequestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/review-tasks/{review_task_id}")
