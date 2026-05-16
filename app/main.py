@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from google.cloud import firestore
 
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository, ReviewTaskRepository
@@ -10,11 +11,11 @@ from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.ocr import OcrService
 from app.services.preprocess import PreprocessService
-from app.services.pubsub import PubSubMessageError
+from app.services.pubsub import PubSubMessageError, decode_pubsub_payload
 from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
-from app.services.workflow import initial_workflow
+from app.services.workflow import initial_workflow, mark_step_failed
 
 
 app = FastAPI(title="Document Pipeline Lab")
@@ -147,8 +148,10 @@ def preprocess_document(envelope: dict) -> dict[str, str]:
         settings()
         return PreprocessService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
+        record_worker_failure("preprocess", envelope, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:
+        record_worker_failure("preprocess", envelope, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -158,8 +161,10 @@ def ocr_document(envelope: dict) -> dict[str, str]:
         settings()
         return OcrService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
+        record_worker_failure("ocr", envelope, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:
+        record_worker_failure("ocr", envelope, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -169,8 +174,10 @@ def extract_document(envelope: dict) -> dict[str, str]:
         settings()
         return ExtractionService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
+        record_worker_failure("extraction", envelope, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:
+        record_worker_failure("extraction", envelope, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -180,6 +187,35 @@ def validate_document(envelope: dict) -> dict[str, str]:
         settings()
         return ValidationService().handle_pubsub_push(envelope)
     except RuntimeError as exc:
+        record_worker_failure("validation", envelope, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:
+        record_worker_failure("validation", envelope, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def record_worker_failure(step: str, envelope: dict, exc: Exception) -> None:
+    try:
+        payload = decode_pubsub_payload(envelope)
+        document_id = payload.get("document_id")
+        if not isinstance(document_id, str) or not document_id:
+            return
+
+        failed_at = datetime.now(timezone.utc)
+        DocumentRepository().update(
+            document_id,
+            {
+                "status": worker_failed_status(step),
+                "updated_at": failed_at,
+                f"{step}_error_count": firestore.Increment(1),
+                **mark_step_failed(step, failed_at, str(exc)),
+            },
+        )
+    except Exception:
+        return
+
+
+def worker_failed_status(step: str) -> str:
+    if step == "ocr":
+        return "OCR_FAILED"
+    return f"{step.upper()}_FAILED"

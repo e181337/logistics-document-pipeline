@@ -169,6 +169,104 @@ Delivery type: Push
 Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/validate
 ```
 
+## Dead Letter Queue Setup
+
+Create one dead-letter topic and one pull subscription per worker:
+
+```bash
+gcloud pubsub topics create preprocess.dead-letter
+gcloud pubsub topics create ocr.dead-letter
+gcloud pubsub topics create extraction.dead-letter
+gcloud pubsub topics create validation.dead-letter
+
+gcloud pubsub subscriptions create preprocess-dead-letter-sub --topic=preprocess.dead-letter
+gcloud pubsub subscriptions create ocr-dead-letter-sub --topic=ocr.dead-letter
+gcloud pubsub subscriptions create extraction-dead-letter-sub --topic=extraction.dead-letter
+gcloud pubsub subscriptions create validation-dead-letter-sub --topic=validation.dead-letter
+```
+
+Grant the Pub/Sub service account permission to publish failed messages to dead-letter topics:
+
+```bash
+PROJECT_ID=your-project-id
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+PUBSUB_SERVICE_ACCOUNT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+gcloud pubsub topics add-iam-policy-binding preprocess.dead-letter \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.publisher"
+
+gcloud pubsub topics add-iam-policy-binding ocr.dead-letter \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.publisher"
+
+gcloud pubsub topics add-iam-policy-binding extraction.dead-letter \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.publisher"
+
+gcloud pubsub topics add-iam-policy-binding validation.dead-letter \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.publisher"
+```
+
+Grant the same service account permission on the original worker subscriptions:
+
+```bash
+gcloud pubsub subscriptions add-iam-policy-binding preprocess-worker-sub \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.subscriber"
+
+gcloud pubsub subscriptions add-iam-policy-binding ocr-worker-sub \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.subscriber"
+
+gcloud pubsub subscriptions add-iam-policy-binding extraction-worker-sub \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.subscriber"
+
+gcloud pubsub subscriptions add-iam-policy-binding validation-worker-sub \
+  --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+  --role="roles/pubsub.subscriber"
+```
+
+Enable dead lettering on the worker subscriptions:
+
+```bash
+gcloud pubsub subscriptions update preprocess-worker-sub \
+  --dead-letter-topic=preprocess.dead-letter \
+  --max-delivery-attempts=5
+
+gcloud pubsub subscriptions update ocr-worker-sub \
+  --dead-letter-topic=ocr.dead-letter \
+  --max-delivery-attempts=5
+
+gcloud pubsub subscriptions update extraction-worker-sub \
+  --dead-letter-topic=extraction.dead-letter \
+  --max-delivery-attempts=5
+
+gcloud pubsub subscriptions update validation-worker-sub \
+  --dead-letter-topic=validation.dead-letter \
+  --max-delivery-attempts=5
+```
+
+When a worker fails, the API still returns a non-2xx response so Pub/Sub can retry. The document workflow also records the failed step:
+
+```json
+{
+  "status": "OCR_FAILED",
+  "workflow": {
+    "current_step": "ocr",
+    "status": "failed",
+    "steps": {
+      "ocr": {
+        "status": "failed",
+        "last_error": "..."
+      }
+    }
+  }
+}
+```
+
 ## Sample Document
 
 Generate a filled Bill of Lading sample from the local template:

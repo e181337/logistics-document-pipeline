@@ -62,6 +62,18 @@ def mark_step_skipped(step: str, now: datetime, reason: str) -> dict[str, Any]:
     }
 
 
+def mark_step_failed(step: str, now: datetime, error: str) -> dict[str, Any]:
+    return {
+        "workflow.current_step": step,
+        "workflow.status": "failed",
+        "workflow.updated_at": now,
+        f"workflow.steps.{step}.status": "failed",
+        f"workflow.steps.{step}.failed_at": now,
+        f"workflow.steps.{step}.updated_at": now,
+        f"workflow.steps.{step}.last_error": error[:1000],
+    }
+
+
 def mark_review_waiting(now: datetime, review_task_id: str | None) -> dict[str, Any]:
     return {
         "workflow.current_step": "review",
