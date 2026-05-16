@@ -5,12 +5,19 @@ from typing import Any
 from app.repositories import DocumentRepository
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.review import ReviewTaskService
+from app.services.workflow import (
+    mark_review_waiting,
+    mark_step_completed,
+    mark_step_processing,
+    mark_workflow_completed,
+)
 
 
 TERMINAL_VALIDATION_STATUSES = {
     "VALIDATION_COMPLETED",
     "VALIDATION_COMPLETED_WITH_WARNINGS",
     "NEEDS_REVIEW",
+    "REVIEW_COMPLETED",
 }
 
 
@@ -34,11 +41,13 @@ class ValidationService:
         if not isinstance(extraction, dict) or not isinstance(extraction.get("fields"), dict):
             raise PubSubMessageError(f"Extraction fields not found for document: {document_id}")
 
+        started_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
             {
                 "status": "VALIDATION_PROCESSING",
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": started_at,
+                **mark_step_processing("validation", started_at),
             },
         )
 
@@ -46,12 +55,23 @@ class ValidationService:
         final_status = validation_status(issues)
         review_task_id = self.review_tasks.create_for_validation_issues(document, issues)
         completed_at = datetime.now(timezone.utc)
+        workflow_update = (
+            mark_review_waiting(completed_at, review_task_id)
+            if review_task_id
+            else mark_workflow_completed("validation", completed_at)
+        )
         self.repository.update(
             document_id,
             {
                 "status": final_status,
                 "updated_at": completed_at,
                 "review_task_id": review_task_id,
+                **mark_step_completed(
+                    "validation",
+                    completed_at,
+                    next_step="review" if review_task_id else None,
+                ),
+                **workflow_update,
                 "validation": {
                     "processed_at": completed_at,
                     "method": "deterministic_rules_v1",

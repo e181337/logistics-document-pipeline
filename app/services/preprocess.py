@@ -9,6 +9,7 @@ from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.storage import StorageService
+from app.services.workflow import mark_step_completed, mark_step_processing
 
 
 TERMINAL_PREPROCESS_STATUSES = {
@@ -18,6 +19,11 @@ TERMINAL_PREPROCESS_STATUSES = {
     "OCR_SKIPPED",
     "EXTRACTION_PROCESSING",
     "EXTRACTION_COMPLETED",
+    "VALIDATION_PROCESSING",
+    "VALIDATION_COMPLETED",
+    "VALIDATION_COMPLETED_WITH_WARNINGS",
+    "NEEDS_REVIEW",
+    "REVIEW_COMPLETED",
 }
 
 
@@ -45,6 +51,7 @@ class PreprocessService:
             {
                 "status": "PREPROCESSING",
                 "updated_at": now,
+                **mark_step_processing("preprocess", now),
             },
         )
 
@@ -56,6 +63,7 @@ class PreprocessService:
             {
                 "status": "PREPROCESSED",
                 "updated_at": completed_at,
+                **mark_step_completed("preprocess", completed_at, next_step="ocr"),
                 "preprocess": {
                     "checked_at": completed_at,
                     "file_uri": metadata.file_uri,

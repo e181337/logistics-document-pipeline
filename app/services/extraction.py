@@ -6,6 +6,7 @@ from app.gcp_clients import genai_client, settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
+from app.services.workflow import mark_step_completed, mark_step_processing
 
 
 TERMINAL_EXTRACTION_STATUSES = {
@@ -14,6 +15,7 @@ TERMINAL_EXTRACTION_STATUSES = {
     "VALIDATION_COMPLETED",
     "VALIDATION_COMPLETED_WITH_WARNINGS",
     "NEEDS_REVIEW",
+    "REVIEW_COMPLETED",
 }
 
 BILL_OF_LADING_SCHEMA = {
@@ -112,11 +114,13 @@ class ExtractionService:
         if not isinstance(ocr, dict) or not isinstance(ocr.get("text"), str):
             raise PubSubMessageError(f"OCR text not found for document: {document_id}")
 
+        started_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
             {
                 "status": "EXTRACTION_PROCESSING",
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": started_at,
+                **mark_step_processing("extraction", started_at),
             },
         )
 
@@ -127,6 +131,7 @@ class ExtractionService:
             {
                 "status": "EXTRACTION_COMPLETED",
                 "updated_at": completed_at,
+                **mark_step_completed("extraction", completed_at, next_step="validation"),
                 "extraction": {
                     "processed_at": completed_at,
                     "method": "llm_gemini_v1",

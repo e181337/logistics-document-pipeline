@@ -19,6 +19,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Run deterministic validation rules and route documents to completed or review states.
 - Create a Firestore review task when validation returns warnings or errors.
 - Resolve review tasks and mark the source document as `REVIEW_COMPLETED`.
+- Track per-document workflow state across upload, preprocess, OCR, extraction, validation, and review.
 
 ## Architecture
 
@@ -43,6 +44,8 @@ POST /invoices
   -> POST /workers/validate
   -> Firestore status: VALIDATION_COMPLETED | VALIDATION_COMPLETED_WITH_WARNINGS | NEEDS_REVIEW
   -> Firestore review_tasks record when review is required
+  -> POST /review-tasks/{review_task_id}/resolve
+  -> Firestore status: REVIEW_COMPLETED
 ```
 
 ## Endpoints
@@ -186,7 +189,19 @@ After upload:
 
 ```json
 {
-  "status": "UPLOADED"
+  "status": "UPLOADED",
+  "workflow": {
+    "current_step": "preprocess",
+    "status": "running",
+    "steps": {
+      "upload": {
+        "status": "completed"
+      },
+      "preprocess": {
+        "status": "pending"
+      }
+    }
+  }
 }
 ```
 
@@ -249,6 +264,19 @@ After Pub/Sub triggers validation:
 ```json
 {
   "status": "VALIDATION_COMPLETED_WITH_WARNINGS",
+  "workflow": {
+    "current_step": "review",
+    "status": "waiting",
+    "steps": {
+      "validation": {
+        "status": "completed"
+      },
+      "review": {
+        "status": "waiting",
+        "review_task_id": "review_abc123"
+      }
+    }
+  },
   "validation": {
     "method": "deterministic_rules_v1",
     "review_task_id": "review_abc123",
@@ -296,4 +324,21 @@ APPROVED
 APPROVED_WITH_WARNINGS
 CORRECTED
 REJECTED
+```
+
+After review resolution:
+
+```json
+{
+  "status": "REVIEW_COMPLETED",
+  "workflow": {
+    "current_step": "review",
+    "status": "completed",
+    "steps": {
+      "review": {
+        "status": "completed"
+      }
+    }
+  }
+}
 ```

@@ -8,6 +8,7 @@ from app.gcp_clients import vision_client
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
+from app.services.workflow import mark_step_completed, mark_step_processing, mark_step_skipped
 
 
 TERMINAL_OCR_STATUSES = {
@@ -15,6 +16,11 @@ TERMINAL_OCR_STATUSES = {
     "OCR_SKIPPED",
     "EXTRACTION_PROCESSING",
     "EXTRACTION_COMPLETED",
+    "VALIDATION_PROCESSING",
+    "VALIDATION_COMPLETED",
+    "VALIDATION_COMPLETED_WITH_WARNINGS",
+    "NEEDS_REVIEW",
+    "REVIEW_COMPLETED",
 }
 SUPPORTED_OCR_CONTENT_TYPES = {"image/png", "image/jpeg", "image/tiff"}
 
@@ -40,25 +46,29 @@ class OcrService:
         content_type = payload.get("content_type") or document.get("content_type")
         if content_type not in SUPPORTED_OCR_CONTENT_TYPES:
             completed_at = datetime.now(timezone.utc)
+            skipped_reason = f"Unsupported OCR content type: {content_type}"
             self.repository.update(
                 document_id,
                 {
                     "status": "OCR_SKIPPED",
                     "updated_at": completed_at,
+                    **mark_step_skipped("ocr", completed_at, skipped_reason),
                     "ocr": {
                         "processed_at": completed_at,
                         "provider": "google_cloud_vision",
-                        "skipped_reason": f"Unsupported OCR content type: {content_type}",
+                        "skipped_reason": skipped_reason,
                     },
                 },
             )
             return {"document_id": document_id, "status": "OCR_SKIPPED"}
 
+        started_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
             {
                 "status": "OCR_PROCESSING",
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": started_at,
+                **mark_step_processing("ocr", started_at),
             },
         )
 
@@ -69,6 +79,7 @@ class OcrService:
             {
                 "status": "OCR_COMPLETED",
                 "updated_at": completed_at,
+                **mark_step_completed("ocr", completed_at, next_step="extraction"),
                 "ocr": {
                     "processed_at": completed_at,
                     "provider": "google_cloud_vision",

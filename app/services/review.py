@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.repositories import DocumentRepository, ReviewTaskRepository
+from app.services.workflow import mark_workflow_completed
 
 
 VALID_REVIEW_RESOLUTIONS = {
@@ -102,6 +103,7 @@ class ReviewTaskService:
             {
                 "status": "REVIEW_COMPLETED",
                 "updated_at": resolved_at,
+                **mark_workflow_completed("review", resolved_at),
                 "review": review_summary,
             },
         )

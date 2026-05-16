@@ -14,6 +14,7 @@ from app.services.pubsub import PubSubMessageError
 from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
+from app.services.workflow import initial_workflow
 
 
 app = FastAPI(title="Document Pipeline Lab")
@@ -79,6 +80,7 @@ async def upload_invoice(
             "sha256": stored_file.sha256,
             "created_at": uploaded_at,
             "updated_at": uploaded_at,
+            "workflow": initial_workflow(uploaded_at),
         },
     )
 
