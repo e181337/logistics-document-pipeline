@@ -32,6 +32,9 @@ class ReviewTaskRepository:
     def create(self, review_task_id: str, payload: dict) -> None:
         self.collection.document(review_task_id).set(payload)
 
+    def update(self, review_task_id: str, payload: dict) -> None:
+        self.collection.document(review_task_id).update(payload)
+
     def get(self, review_task_id: str) -> dict | None:
         snapshot = self.collection.document(review_task_id).get()
         if not snapshot.exists:

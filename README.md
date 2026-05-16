@@ -18,6 +18,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Publish a `validation.requested` event after extraction.
 - Run deterministic validation rules and route documents to completed or review states.
 - Create a Firestore review task when validation returns warnings or errors.
+- Resolve review tasks and mark the source document as `REVIEW_COMPLETED`.
 
 ## Architecture
 
@@ -51,6 +52,7 @@ GET  /health
 POST /invoices
 GET  /documents/{document_id}
 GET  /review-tasks/{review_task_id}
+POST /review-tasks/{review_task_id}/resolve
 POST /workers/preprocess
 POST /workers/ocr
 POST /workers/extract
@@ -273,4 +275,25 @@ Review task:
   "reason": "validation_issues",
   "issues": []
 }
+```
+
+Resolve review task:
+
+```bash
+curl -X POST http://127.0.0.1:8000/review-tasks/review_abc123/resolve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resolution": "APPROVED_WITH_WARNINGS",
+    "reviewed_by": "operator@example.com",
+    "notes": "Postal code warnings accepted for this shipment."
+  }'
+```
+
+Valid resolutions:
+
+```text
+APPROVED
+APPROVED_WITH_WARNINGS
+CORRECTED
+REJECTED
 ```

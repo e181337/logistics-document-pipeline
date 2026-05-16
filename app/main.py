@@ -11,6 +11,7 @@ from app.services.extraction import ExtractionService
 from app.services.ocr import OcrService
 from app.services.preprocess import PreprocessService
 from app.services.pubsub import PubSubMessageError
+from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
 
@@ -125,6 +126,17 @@ def get_review_task(review_task_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Review task not found")
 
     return review_task
+
+
+@app.post("/review-tasks/{review_task_id}/resolve")
+def resolve_review_task(review_task_id: str, payload: dict) -> dict[str, str]:
+    try:
+        settings()
+        return ReviewTaskService().resolve(review_task_id, payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ReviewTaskError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/workers/preprocess")
