@@ -11,6 +11,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Process the Pub/Sub message with a Cloud Run worker endpoint.
 - Update Firestore status from `UPLOADED` to `PREPROCESSED`.
 - Extract basic preprocess metadata such as image width, height, format, and page count.
+- Route multi-page PDFs through page-level fan-out/fan-in OCR.
 - Publish an `ocr.requested` event after preprocess.
 - Run OCR with Google Cloud Vision and store extracted text in Firestore.
 - Publish an `extraction.requested` event after OCR.
@@ -31,7 +32,13 @@ POST /invoices
   -> Push subscription
   -> POST /workers/preprocess
   -> Firestore status: PREPROCESSED
-  -> Pub/Sub topic: ocr.requested
+  -> Pub/Sub topic: ocr.requested | document.split.requested
+  -> For multi-page PDFs:
+       -> POST /workers/split
+       -> Pub/Sub topic: page.ocr.requested per page
+       -> POST /workers/page-ocr
+       -> Pub/Sub topic: ocr.aggregate.requested when all pages complete
+       -> POST /workers/ocr-aggregate
   -> Push subscription
   -> POST /workers/ocr
   -> Firestore status: OCR_COMPLETED
@@ -58,6 +65,9 @@ POST /documents/{document_id}/retry
 GET  /review-tasks/{review_task_id}
 POST /review-tasks/{review_task_id}/resolve
 POST /workers/preprocess
+POST /workers/split
+POST /workers/page-ocr
+POST /workers/ocr-aggregate
 POST /workers/ocr
 POST /workers/extract
 POST /workers/validate
@@ -115,6 +125,9 @@ GCP_PROJECT_ID=your-project-id
 GCS_UPLOAD_BUCKET=your-upload-bucket
 PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded
 PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested
+PUBSUB_DOCUMENT_SPLIT_REQUESTED_TOPIC=document.split.requested
+PUBSUB_PAGE_OCR_REQUESTED_TOPIC=page.ocr.requested
+PUBSUB_OCR_AGGREGATE_REQUESTED_TOPIC=ocr.aggregate.requested
 PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested
 PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested
 FIRESTORE_DOCUMENT_COLLECTION=documents
@@ -143,7 +156,7 @@ gcloud run deploy document-pipeline-api \
   --source . \
   --region europe-west3 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_REVIEW_TASK_COLLECTION=review_tasks,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
+  --set-env-vars GCP_PROJECT_ID=your-project-id,GCS_UPLOAD_BUCKET=your-upload-bucket,PUBSUB_DOCUMENT_UPLOADED_TOPIC=document.uploaded,PUBSUB_OCR_REQUESTED_TOPIC=ocr.requested,PUBSUB_DOCUMENT_SPLIT_REQUESTED_TOPIC=document.split.requested,PUBSUB_PAGE_OCR_REQUESTED_TOPIC=page.ocr.requested,PUBSUB_OCR_AGGREGATE_REQUESTED_TOPIC=ocr.aggregate.requested,PUBSUB_EXTRACTION_REQUESTED_TOPIC=extraction.requested,PUBSUB_VALIDATION_REQUESTED_TOPIC=validation.requested,FIRESTORE_DOCUMENT_COLLECTION=documents,FIRESTORE_REVIEW_TASK_COLLECTION=review_tasks,FIRESTORE_DATABASE=your-firestore-database,VERTEX_AI_LOCATION=global,GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
 ```
 
 After deployment, create Pub/Sub push subscriptions:
@@ -158,6 +171,21 @@ Topic: ocr.requested
 Subscription ID: ocr-worker-sub
 Delivery type: Push
 Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/ocr
+
+Topic: document.split.requested
+Subscription ID: split-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/split
+
+Topic: page.ocr.requested
+Subscription ID: page-ocr-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/page-ocr
+
+Topic: ocr.aggregate.requested
+Subscription ID: ocr-aggregate-worker-sub
+Delivery type: Push
+Endpoint URL: https://YOUR_CLOUD_RUN_URL/workers/ocr-aggregate
 
 Topic: extraction.requested
 Subscription ID: extraction-worker-sub
@@ -439,7 +467,9 @@ Retryable steps:
 
 ```text
 preprocess
+split
 ocr
+ocr_aggregate
 extraction
 validation
 ```

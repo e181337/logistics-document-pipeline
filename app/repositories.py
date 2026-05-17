@@ -23,6 +23,29 @@ class DocumentRepository:
 
         return document
 
+    def create_page(self, document_id: str, page_id: str, payload: dict) -> None:
+        self.collection.document(document_id).collection("pages").document(page_id).set(payload)
+
+    def get_page(self, document_id: str, page_id: str) -> dict | None:
+        snapshot = self.collection.document(document_id).collection("pages").document(page_id).get()
+        if not snapshot.exists:
+            return None
+
+        page = snapshot.to_dict()
+        if page is None:
+            return None
+
+        return page
+
+    def list_pages(self, document_id: str) -> list[dict]:
+        snapshots = (
+            self.collection.document(document_id)
+            .collection("pages")
+            .order_by("page_number")
+            .stream()
+        )
+        return [snapshot.to_dict() or {} for snapshot in snapshots]
+
 
 class ReviewTaskRepository:
     def __init__(self) -> None:

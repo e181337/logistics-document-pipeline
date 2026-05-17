@@ -29,6 +29,8 @@ TERMINAL_PREPROCESS_STATUSES = {
     "VALIDATION_RETRY_REQUESTED",
 }
 
+PDF_SPLIT_PAGE_THRESHOLD = 1
+
 
 class PreprocessService:
     def __init__(self) -> None:
@@ -60,13 +62,14 @@ class PreprocessService:
 
         metadata = self.storage.get_metadata(file_uri)
         document_shape = self.inspect_document(file_uri, metadata.content_type)
+        next_step = next_step_after_preprocess(document_shape)
         completed_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
             {
                 "status": "PREPROCESSED",
                 "updated_at": completed_at,
-                **mark_step_completed("preprocess", completed_at, next_step="ocr"),
+                **mark_step_completed("preprocess", completed_at, next_step=next_step),
                 "preprocess": {
                     "checked_at": completed_at,
                     "file_uri": metadata.file_uri,
@@ -81,16 +84,23 @@ class PreprocessService:
             },
         )
 
-        self.event_publisher.publish_ocr_requested(
-            topic_name=settings().pubsub_ocr_requested_topic,
-            payload={
-                "document_id": document_id,
-                "tenant_id": document["tenant_id"],
-                "file_uri": file_uri,
-                "content_type": metadata.content_type,
-                "trace_id": document.get("trace_id", ""),
-            },
-        )
+        event_payload = {
+            "document_id": document_id,
+            "tenant_id": document["tenant_id"],
+            "file_uri": file_uri,
+            "content_type": metadata.content_type,
+            "trace_id": document.get("trace_id", ""),
+        }
+        if next_step == "split":
+            self.event_publisher.publish_document_split_requested(
+                topic_name=settings().pubsub_document_split_requested_topic,
+                payload=event_payload,
+            )
+        else:
+            self.event_publisher.publish_ocr_requested(
+                topic_name=settings().pubsub_ocr_requested_topic,
+                payload=event_payload,
+            )
 
         return {"document_id": document_id, "status": "PREPROCESSED"}
 
@@ -113,11 +123,27 @@ class PreprocessService:
                 }
 
         if content_type == "application/pdf":
+            import fitz
+
+            pdf_bytes = self.storage.download_bytes(file_uri)
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                page_count = pdf.page_count
+
             return {
                 "document_kind": "pdf",
-                "page_count": None,
+                "page_count": page_count,
             }
 
         return {
             "document_kind": "unknown",
         }
+
+
+def next_step_after_preprocess(document_shape: dict[str, Any]) -> str:
+    if (
+        document_shape.get("document_kind") == "pdf"
+        and isinstance(document_shape.get("page_count"), int)
+        and document_shape["page_count"] > PDF_SPLIT_PAGE_THRESHOLD
+    ):
+        return "split"
+    return "ocr"

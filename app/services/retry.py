@@ -9,7 +9,14 @@ from app.services.events import EventPublisher
 from app.services.workflow import mark_step_retry_requested
 
 
-RETRYABLE_STEPS = {"preprocess", "ocr", "extraction", "validation"}
+RETRYABLE_STEPS = {
+    "preprocess",
+    "split",
+    "ocr",
+    "ocr_aggregate",
+    "extraction",
+    "validation",
+}
 
 
 class RetryRequestError(ValueError):
@@ -71,7 +78,7 @@ def retry_event_payload(document: dict[str, Any], step: str) -> dict[str, Any]:
         "trace_id": document.get("trace_id", ""),
     }
 
-    if step in {"preprocess", "ocr"}:
+    if step in {"preprocess", "split", "ocr"}:
         payload["file_uri"] = require_document_value(document, "file_uri")
         payload["content_type"] = document.get("content_type")
 
@@ -96,9 +103,19 @@ def publish_retry_event(
             current_settings.pubsub_document_uploaded_topic,
             payload,
         )
+    elif step == "split":
+        event_publisher.publish_document_split_requested(
+            current_settings.pubsub_document_split_requested_topic,
+            payload,
+        )
     elif step == "ocr":
         event_publisher.publish_ocr_requested(
             current_settings.pubsub_ocr_requested_topic,
+            payload,
+        )
+    elif step == "ocr_aggregate":
+        event_publisher.publish_ocr_aggregate_requested(
+            current_settings.pubsub_ocr_aggregate_requested_topic,
             payload,
         )
     elif step == "extraction":

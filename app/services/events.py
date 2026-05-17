@@ -20,6 +20,15 @@ class EventPublisher:
     def publish_ocr_requested(self, topic_name: str, payload: dict) -> None:
         self.publish(topic_name, payload)
 
+    def publish_document_split_requested(self, topic_name: str, payload: dict) -> None:
+        self.publish(topic_name, payload)
+
+    def publish_page_ocr_requested(self, topic_name: str, payload: dict) -> None:
+        self.publish(topic_name, payload)
+
+    def publish_ocr_aggregate_requested(self, topic_name: str, payload: dict) -> None:
+        self.publish(topic_name, payload)
+
     def publish_extraction_requested(self, topic_name: str, payload: dict) -> None:
         self.publish(topic_name, payload)
 

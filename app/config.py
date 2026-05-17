@@ -13,6 +13,9 @@ class Settings:
     gcs_upload_bucket: str
     pubsub_document_uploaded_topic: str
     pubsub_ocr_requested_topic: str
+    pubsub_document_split_requested_topic: str
+    pubsub_page_ocr_requested_topic: str
+    pubsub_ocr_aggregate_requested_topic: str
     pubsub_extraction_requested_topic: str
     pubsub_validation_requested_topic: str
     firestore_document_collection: str = "documents"
@@ -34,6 +37,18 @@ def get_settings() -> Settings:
         pubsub_ocr_requested_topic=os.getenv(
             "PUBSUB_OCR_REQUESTED_TOPIC",
             "ocr.requested",
+        ),
+        pubsub_document_split_requested_topic=os.getenv(
+            "PUBSUB_DOCUMENT_SPLIT_REQUESTED_TOPIC",
+            "document.split.requested",
+        ),
+        pubsub_page_ocr_requested_topic=os.getenv(
+            "PUBSUB_PAGE_OCR_REQUESTED_TOPIC",
+            "page.ocr.requested",
+        ),
+        pubsub_ocr_aggregate_requested_topic=os.getenv(
+            "PUBSUB_OCR_AGGREGATE_REQUESTED_TOPIC",
+            "ocr.aggregate.requested",
         ),
         pubsub_extraction_requested_topic=os.getenv(
             "PUBSUB_EXTRACTION_REQUESTED_TOPIC",
@@ -65,6 +80,9 @@ def validate_settings(settings: Settings) -> None:
             ("GCS_UPLOAD_BUCKET", settings.gcs_upload_bucket),
             ("PUBSUB_DOCUMENT_UPLOADED_TOPIC", settings.pubsub_document_uploaded_topic),
             ("PUBSUB_OCR_REQUESTED_TOPIC", settings.pubsub_ocr_requested_topic),
+            ("PUBSUB_DOCUMENT_SPLIT_REQUESTED_TOPIC", settings.pubsub_document_split_requested_topic),
+            ("PUBSUB_PAGE_OCR_REQUESTED_TOPIC", settings.pubsub_page_ocr_requested_topic),
+            ("PUBSUB_OCR_AGGREGATE_REQUESTED_TOPIC", settings.pubsub_ocr_aggregate_requested_topic),
             ("PUBSUB_EXTRACTION_REQUESTED_TOPIC", settings.pubsub_extraction_requested_topic),
             ("PUBSUB_VALIDATION_REQUESTED_TOPIC", settings.pubsub_validation_requested_topic),
         )

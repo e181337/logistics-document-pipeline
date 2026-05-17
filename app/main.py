@@ -10,10 +10,13 @@ from app.repositories import DocumentRepository, ReviewTaskRepository
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.ocr import OcrService
+from app.services.ocr_aggregate import OcrAggregateService
+from app.services.page_ocr import PageOcrService
 from app.services.preprocess import PreprocessService
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload
 from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.retry import RetryRequestError, RetryService
+from app.services.split import SplitService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
 from app.services.workflow import initial_workflow, mark_step_failed
@@ -177,6 +180,45 @@ def ocr_document(envelope: dict) -> dict[str, str]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except PubSubMessageError as exc:
         record_worker_failure("ocr", envelope, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/workers/split")
+def split_document(envelope: dict) -> dict[str, str]:
+    try:
+        settings()
+        return SplitService().handle_pubsub_push(envelope)
+    except RuntimeError as exc:
+        record_worker_failure("split", envelope, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except PubSubMessageError as exc:
+        record_worker_failure("split", envelope, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/workers/page-ocr")
+def ocr_document_page(envelope: dict) -> dict[str, str]:
+    try:
+        settings()
+        return PageOcrService().handle_pubsub_push(envelope)
+    except RuntimeError as exc:
+        record_worker_failure("page_ocr", envelope, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except PubSubMessageError as exc:
+        record_worker_failure("page_ocr", envelope, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/workers/ocr-aggregate")
+def aggregate_document_ocr(envelope: dict) -> dict[str, str]:
+    try:
+        settings()
+        return OcrAggregateService().handle_pubsub_push(envelope)
+    except RuntimeError as exc:
+        record_worker_failure("ocr_aggregate", envelope, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except PubSubMessageError as exc:
+        record_worker_failure("ocr_aggregate", envelope, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
