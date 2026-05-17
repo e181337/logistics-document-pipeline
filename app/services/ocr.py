@@ -7,6 +7,7 @@ from app.gcp_clients import settings
 from app.gcp_clients import vision_client
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.workflow import mark_step_completed, mark_step_processing, mark_step_skipped
 
@@ -55,6 +56,7 @@ class OcrService:
                     "status": "OCR_SKIPPED",
                     "updated_at": completed_at,
                     **mark_step_skipped("ocr", completed_at, skipped_reason),
+                    **mark_step_metric(document.get("workflow"), "ocr", completed_at),
                     "ocr": {
                         "processed_at": completed_at,
                         "provider": "google_cloud_vision",
@@ -82,6 +84,7 @@ class OcrService:
                 "status": "OCR_COMPLETED",
                 "updated_at": completed_at,
                 **mark_step_completed("ocr", completed_at, next_step="extraction"),
+                **mark_step_metric(document.get("workflow"), "ocr", completed_at),
                 "ocr": {
                     "processed_at": completed_at,
                     "provider": "google_cloud_vision",

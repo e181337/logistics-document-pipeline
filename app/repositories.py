@@ -1,3 +1,5 @@
+from google.cloud import firestore
+
 from app.gcp_clients import firestore_client, settings
 
 
@@ -42,6 +44,14 @@ class DocumentRepository:
             self.collection.document(document_id)
             .collection("pages")
             .order_by("page_number")
+            .stream()
+        )
+        return [snapshot.to_dict() or {} for snapshot in snapshots]
+
+    def list_recent_with_metric(self, metric_name: str, limit: int) -> list[dict]:
+        snapshots = (
+            self.collection.order_by("updated_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
             .stream()
         )
         return [snapshot.to_dict() or {} for snapshot in snapshots]

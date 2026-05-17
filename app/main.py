@@ -11,6 +11,7 @@ from app.services.errors import NonRetryablePipelineError
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.failures import PipelineFailureRecorder
+from app.services.metrics import SLA_TARGET_MS, percentile, processing_metric_from_document
 from app.services.ocr import OcrService
 from app.services.ocr_aggregate import OcrAggregateService
 from app.services.page_ocr import PageOcrService
@@ -120,6 +121,33 @@ def get_document(document_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Document not found")
 
     return document
+
+
+@app.get("/metrics/processing")
+def get_processing_metrics(
+    metric_name: str = "validation_completed",
+    limit: int = 100,
+) -> dict[str, int | str | None]:
+    try:
+        settings()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bounded_limit = max(1, min(limit, 500))
+    documents = DocumentRepository().list_recent_with_metric(metric_name, bounded_limit)
+    durations = [
+        duration
+        for document in documents
+        if (duration := processing_metric_from_document(document, metric_name)) is not None
+    ]
+    p95_ms = percentile(durations, 0.95)
+    return {
+        "metric_name": metric_name,
+        "sample_size": len(durations),
+        "p95_ms": p95_ms,
+        "sla_target_ms": SLA_TARGET_MS,
+        "sla_met": p95_ms <= SLA_TARGET_MS if p95_ms is not None else None,
+    }
 
 
 @app.post("/documents/{document_id}/retry")

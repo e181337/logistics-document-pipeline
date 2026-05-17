@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.repositories import DocumentRepository, ReviewTaskRepository
+from app.services.metrics import mark_processing_metric, mark_step_metric
 from app.services.workflow import mark_workflow_completed
 
 
@@ -98,12 +99,19 @@ class ReviewTaskService:
                 "updated_at": resolved_at,
             },
         )
+        document = self.documents.get(task["document_id"]) or {}
         self.documents.update(
             task["document_id"],
             {
                 "status": "REVIEW_COMPLETED",
                 "updated_at": resolved_at,
                 **mark_workflow_completed("review", resolved_at),
+                **mark_step_metric(document.get("workflow"), "review", resolved_at),
+                **mark_processing_metric(
+                    document,
+                    resolved_at,
+                    metric_name="review_completed",
+                ),
                 "review": review_summary,
             },
         )

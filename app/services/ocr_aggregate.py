@@ -4,6 +4,7 @@ from typing import Any
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.workflow import mark_step_completed, mark_step_processing
 
@@ -67,6 +68,7 @@ class OcrAggregateService:
                     "text_length": len(full_text),
                 },
                 **mark_step_completed("ocr_aggregate", completed_at, next_step="extraction"),
+                **mark_step_metric(document.get("workflow"), "ocr_aggregate", completed_at),
             },
         )
 

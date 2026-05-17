@@ -23,6 +23,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Track per-document workflow state across upload, preprocess, OCR, extraction, validation, and review.
 - Record worker failures in a separate Firestore `pipeline_failures` collection.
 - Ack non-retryable worker failures so Pub/Sub does not retry messages that cannot succeed.
+- Store step duration and end-to-end SLA metrics for p95 processing-time checks.
 
 ## Architecture
 
@@ -63,6 +64,7 @@ POST /invoices
 GET  /health
 POST /invoices
 GET  /documents/{document_id}
+GET  /metrics/processing
 POST /documents/{document_id}/retry
 GET  /review-tasks/{review_task_id}
 POST /review-tasks/{review_task_id}/resolve
@@ -84,6 +86,24 @@ pipeline_failures/{failure_id}
 ```
 
 Retryable failures return non-2xx responses so Pub/Sub retries and can eventually route to DLQ. Non-retryable failures are recorded and return 2xx so Pub/Sub acknowledges the message.
+
+Processing-time metrics can be read with:
+
+```bash
+curl "http://127.0.0.1:8000/metrics/processing?metric_name=validation_completed&limit=100"
+```
+
+The default SLA target is 120 seconds:
+
+```json
+{
+  "metric_name": "validation_completed",
+  "sample_size": 10,
+  "p95_ms": 54321,
+  "sla_target_ms": 120000,
+  "sla_met": true
+}
+```
 
 ## Local Setup
 

@@ -7,6 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.storage import StorageService
 from app.services.workflow import mark_step_completed, mark_step_processing
@@ -70,6 +71,7 @@ class PreprocessService:
                 "status": "PREPROCESSED",
                 "updated_at": completed_at,
                 **mark_step_completed("preprocess", completed_at, next_step=next_step),
+                **mark_step_metric(document.get("workflow"), "preprocess", completed_at),
                 "preprocess": {
                     "checked_at": completed_at,
                     "file_uri": metadata.file_uri,

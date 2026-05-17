@@ -5,6 +5,7 @@ from typing import Any
 from app.gcp_clients import genai_client, settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.workflow import mark_step_completed, mark_step_processing
 
@@ -133,6 +134,7 @@ class ExtractionService:
                 "status": "EXTRACTION_COMPLETED",
                 "updated_at": completed_at,
                 **mark_step_completed("extraction", completed_at, next_step="validation"),
+                **mark_step_metric(document.get("workflow"), "extraction", completed_at),
                 "extraction": {
                     "processed_at": completed_at,
                     "method": "llm_gemini_v1",

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.repositories import DocumentRepository
+from app.services.metrics import mark_processing_metric, mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.review import ReviewTaskService
 from app.services.workflow import (
@@ -72,6 +73,8 @@ class ValidationService:
                     next_step="review" if review_task_id else None,
                 ),
                 **workflow_update,
+                **mark_step_metric(document.get("workflow"), "validation", completed_at),
+                **mark_processing_metric(document, completed_at),
                 "validation": {
                     "processed_at": completed_at,
                     "method": "deterministic_rules_v1",

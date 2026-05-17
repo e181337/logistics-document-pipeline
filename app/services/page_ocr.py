@@ -7,6 +7,7 @@ from google.cloud import vision
 from app.gcp_clients import firestore_client, settings, vision_client
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.workflow import mark_step_completed
 
@@ -134,6 +135,11 @@ class PageOcrService:
                             "page_ocr",
                             completed_at,
                             next_step="ocr_aggregate",
+                        ),
+                        **mark_step_metric(
+                            document.get("workflow"),
+                            "page_ocr",
+                            completed_at,
                         ),
                     }
                 )
