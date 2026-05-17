@@ -24,6 +24,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Record worker failures in a separate Firestore `pipeline_failures` collection.
 - Ack non-retryable worker failures so Pub/Sub does not retry messages that cannot succeed.
 - Store step duration and end-to-end SLA metrics for p95 processing-time checks.
+- Emit structured JSON logs for worker start, completion, failure, upload, retry, and failure recording events.
 
 ## Architecture
 
@@ -102,6 +103,20 @@ The default SLA target is 120 seconds:
   "p95_ms": 54321,
   "sla_target_ms": 120000,
   "sla_met": true
+}
+```
+
+Worker logs are emitted as JSON strings with fields such as:
+
+```json
+{
+  "event": "worker_completed",
+  "step": "page_ocr",
+  "document_id": "doc_abc123",
+  "trace_id": "trace_abc123",
+  "page_id": "0001",
+  "duration_ms": 1234,
+  "status": "OCR_COMPLETED"
 }
 ```
 

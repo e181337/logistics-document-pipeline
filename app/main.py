@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
+from time import perf_counter
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
@@ -11,11 +12,13 @@ from app.services.errors import NonRetryablePipelineError
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.failures import PipelineFailureRecorder
+from app.services.logging import log_event
 from app.services.metrics import SLA_TARGET_MS, percentile, processing_metric_from_document
 from app.services.ocr import OcrService
 from app.services.ocr_aggregate import OcrAggregateService
 from app.services.page_ocr import PageOcrService
 from app.services.preprocess import PreprocessService
+from app.services.pubsub import decode_pubsub_payload
 from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.retry import RetryRequestError, RetryService
 from app.services.split import SplitService
@@ -101,6 +104,15 @@ async def upload_invoice(
             "trace_id": trace_id,
         },
     )
+    log_event(
+        "document_uploaded",
+        document_id=document_id,
+        tenant_id=tenant_id,
+        trace_id=trace_id,
+        filename=safe_filename,
+        content_type=file.content_type,
+        size_bytes=stored_file.size_bytes,
+    )
 
     return {
         "document_id": document_id,
@@ -154,7 +166,14 @@ def get_processing_metrics(
 def retry_document_step(document_id: str, payload: dict) -> dict[str, str]:
     try:
         settings()
-        return RetryService().retry(document_id, payload)
+        result = RetryService().retry(document_id, payload)
+        log_event(
+            "document_retry_requested",
+            document_id=document_id,
+            step=payload.get("step"),
+            status=result.get("status"),
+        )
+        return result
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except RetryRequestError as exc:
@@ -226,17 +245,59 @@ def validate_document(envelope: dict) -> dict[str, str]:
 
 
 def run_worker(step: str, envelope: dict, handler: Callable[[], dict[str, str]]) -> dict[str, str]:
+    started_at = perf_counter()
+    payload = safe_decode_payload(envelope)
+    log_worker_event("worker_started", step, payload)
     try:
         settings()
-        return handler()
+        result = handler()
+        log_worker_event(
+            "worker_completed",
+            step,
+            payload,
+            status=result.get("status"),
+            duration_ms=elapsed_ms(started_at),
+        )
+        return result
     except NonRetryablePipelineError as exc:
         record_worker_failure(step, envelope, exc, retryable=False)
-        return {"status": worker_failed_status(step, retryable=False)}
+        status = worker_failed_status(step, retryable=False)
+        log_worker_event(
+            "worker_failed",
+            step,
+            payload,
+            status=status,
+            retryable=False,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            duration_ms=elapsed_ms(started_at),
+        )
+        return {"status": status}
     except RuntimeError as exc:
         record_worker_failure(step, envelope, exc, retryable=True)
+        log_worker_event(
+            "worker_failed",
+            step,
+            payload,
+            status=worker_failed_status(step, retryable=True),
+            retryable=True,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            duration_ms=elapsed_ms(started_at),
+        )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         record_worker_failure(step, envelope, exc, retryable=True)
+        log_worker_event(
+            "worker_failed",
+            step,
+            payload,
+            status=worker_failed_status(step, retryable=True),
+            retryable=True,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            duration_ms=elapsed_ms(started_at),
+        )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -257,3 +318,32 @@ def worker_failed_status(step: str, retryable: bool) -> str:
     if step == "ocr":
         return f"OCR_{suffix}"
     return f"{step.upper()}_{suffix}"
+
+
+def safe_decode_payload(envelope: dict) -> dict:
+    try:
+        return decode_pubsub_payload(envelope)
+    except Exception:
+        return {}
+
+
+def log_worker_event(
+    event: str,
+    step: str,
+    payload: dict,
+    **fields: object,
+) -> None:
+    log_event(
+        event,
+        step=step,
+        document_id=payload.get("document_id"),
+        tenant_id=payload.get("tenant_id"),
+        trace_id=payload.get("trace_id"),
+        page_id=payload.get("page_id"),
+        page_number=payload.get("page_number"),
+        **fields,
+    )
+
+
+def elapsed_ms(started_at: float) -> int:
+    return int((perf_counter() - started_at) * 1000)

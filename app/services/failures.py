@@ -5,6 +5,7 @@ from typing import Any
 from google.cloud import firestore
 
 from app.repositories import DocumentRepository, PipelineFailureRepository
+from app.services.logging import log_event
 from app.services.pubsub import decode_pubsub_payload
 from app.services.workflow import mark_step_failed
 
@@ -36,6 +37,17 @@ class PipelineFailureRecorder:
                 "payload": payload,
                 "created_at": failed_at,
             },
+        )
+        log_event(
+            "pipeline_failure_recorded",
+            failure_id=failure_id,
+            document_id=document_id,
+            tenant_id=tenant_id,
+            trace_id=trace_id,
+            step=step,
+            retryable=retryable,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
         )
 
         if document_id:
