@@ -2,8 +2,10 @@ import base64
 import json
 from typing import Any
 
+from app.services.errors import NonRetryablePipelineError
 
-class PubSubMessageError(ValueError):
+
+class PubSubMessageError(NonRetryablePipelineError, ValueError):
     pass
 
 

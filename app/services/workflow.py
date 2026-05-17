@@ -62,7 +62,12 @@ def mark_step_skipped(step: str, now: datetime, reason: str) -> dict[str, Any]:
     }
 
 
-def mark_step_failed(step: str, now: datetime, error: str) -> dict[str, Any]:
+def mark_step_failed(
+    step: str,
+    now: datetime,
+    error: str,
+    retryable: bool = True,
+) -> dict[str, Any]:
     return {
         "workflow.current_step": step,
         "workflow.status": "failed",
@@ -71,6 +76,7 @@ def mark_step_failed(step: str, now: datetime, error: str) -> dict[str, Any]:
         f"workflow.steps.{step}.failed_at": now,
         f"workflow.steps.{step}.updated_at": now,
         f"workflow.steps.{step}.last_error": error[:1000],
+        f"workflow.steps.{step}.retryable": retryable,
     }
 
 

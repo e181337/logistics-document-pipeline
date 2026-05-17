@@ -20,6 +20,7 @@ class Settings:
     pubsub_validation_requested_topic: str
     firestore_document_collection: str = "documents"
     firestore_review_task_collection: str = "review_tasks"
+    firestore_pipeline_failure_collection: str = "pipeline_failures"
     firestore_database: str = "(default)"
     vertex_ai_location: str = "global"
     gemini_extraction_model: str = "gemini-2.5-flash"
@@ -65,6 +66,10 @@ def get_settings() -> Settings:
         firestore_review_task_collection=os.getenv(
             "FIRESTORE_REVIEW_TASK_COLLECTION",
             "review_tasks",
+        ),
+        firestore_pipeline_failure_collection=os.getenv(
+            "FIRESTORE_PIPELINE_FAILURE_COLLECTION",
+            "pipeline_failures",
         ),
         firestore_database=os.getenv("FIRESTORE_DATABASE", "(default)"),
         vertex_ai_location=os.getenv("VERTEX_AI_LOCATION", "global"),

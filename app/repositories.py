@@ -68,3 +68,12 @@ class ReviewTaskRepository:
             return None
 
         return task
+
+
+class PipelineFailureRepository:
+    def __init__(self) -> None:
+        self.collection_name = settings().firestore_pipeline_failure_collection
+        self.collection = firestore_client().collection(self.collection_name)
+
+    def create(self, failure_id: str, payload: dict) -> None:
+        self.collection.document(failure_id).set(payload)

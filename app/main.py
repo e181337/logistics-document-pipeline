@@ -1,25 +1,26 @@
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from google.cloud import firestore
 
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository, ReviewTaskRepository
+from app.services.errors import NonRetryablePipelineError
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
+from app.services.failures import PipelineFailureRecorder
 from app.services.ocr import OcrService
 from app.services.ocr_aggregate import OcrAggregateService
 from app.services.page_ocr import PageOcrService
 from app.services.preprocess import PreprocessService
-from app.services.pubsub import PubSubMessageError, decode_pubsub_payload
 from app.services.review import ReviewTaskError, ReviewTaskService
 from app.services.retry import RetryRequestError, RetryService
 from app.services.split import SplitService
 from app.services.storage import StorageService
 from app.services.validation import ValidationService
-from app.services.workflow import initial_workflow, mark_step_failed
+from app.services.workflow import initial_workflow
 
 
 app = FastAPI(title="Document Pipeline Lab")
@@ -159,117 +160,72 @@ def resolve_review_task(review_task_id: str, payload: dict) -> dict[str, str]:
 
 @app.post("/workers/preprocess")
 def preprocess_document(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return PreprocessService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("preprocess", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("preprocess", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker("preprocess", envelope, lambda: PreprocessService().handle_pubsub_push(envelope))
 
 
 @app.post("/workers/ocr")
 def ocr_document(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return OcrService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("ocr", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("ocr", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker("ocr", envelope, lambda: OcrService().handle_pubsub_push(envelope))
 
 
 @app.post("/workers/split")
 def split_document(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return SplitService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("split", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("split", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker("split", envelope, lambda: SplitService().handle_pubsub_push(envelope))
 
 
 @app.post("/workers/page-ocr")
 def ocr_document_page(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return PageOcrService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("page_ocr", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("page_ocr", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker("page_ocr", envelope, lambda: PageOcrService().handle_pubsub_push(envelope))
 
 
 @app.post("/workers/ocr-aggregate")
 def aggregate_document_ocr(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return OcrAggregateService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("ocr_aggregate", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("ocr_aggregate", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker(
+        "ocr_aggregate",
+        envelope,
+        lambda: OcrAggregateService().handle_pubsub_push(envelope),
+    )
 
 
 @app.post("/workers/extract")
 def extract_document(envelope: dict) -> dict[str, str]:
-    try:
-        settings()
-        return ExtractionService().handle_pubsub_push(envelope)
-    except RuntimeError as exc:
-        record_worker_failure("extraction", envelope, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("extraction", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_worker("extraction", envelope, lambda: ExtractionService().handle_pubsub_push(envelope))
 
 
 @app.post("/workers/validate")
 def validate_document(envelope: dict) -> dict[str, str]:
+    return run_worker("validation", envelope, lambda: ValidationService().handle_pubsub_push(envelope))
+
+
+def run_worker(step: str, envelope: dict, handler: Callable[[], dict[str, str]]) -> dict[str, str]:
     try:
         settings()
-        return ValidationService().handle_pubsub_push(envelope)
+        return handler()
+    except NonRetryablePipelineError as exc:
+        record_worker_failure(step, envelope, exc, retryable=False)
+        return {"status": worker_failed_status(step, retryable=False)}
     except RuntimeError as exc:
-        record_worker_failure("validation", envelope, exc)
+        record_worker_failure(step, envelope, exc, retryable=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PubSubMessageError as exc:
-        record_worker_failure("validation", envelope, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        record_worker_failure(step, envelope, exc, retryable=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-def record_worker_failure(step: str, envelope: dict, exc: Exception) -> None:
+def record_worker_failure(
+    step: str,
+    envelope: dict,
+    exc: Exception,
+    retryable: bool,
+) -> None:
     try:
-        payload = decode_pubsub_payload(envelope)
-        document_id = payload.get("document_id")
-        if not isinstance(document_id, str) or not document_id:
-            return
-
-        failed_at = datetime.now(timezone.utc)
-        DocumentRepository().update(
-            document_id,
-            {
-                "status": worker_failed_status(step),
-                "updated_at": failed_at,
-                f"{step}_error_count": firestore.Increment(1),
-                **mark_step_failed(step, failed_at, str(exc)),
-            },
-        )
+        PipelineFailureRecorder().record(step, envelope, exc, retryable)
     except Exception:
         return
 
 
-def worker_failed_status(step: str) -> str:
+def worker_failed_status(step: str, retryable: bool) -> str:
+    suffix = "FAILED" if retryable else "FAILED_NON_RETRYABLE"
     if step == "ocr":
-        return "OCR_FAILED"
-    return f"{step.upper()}_FAILED"
+        return f"OCR_{suffix}"
+    return f"{step.upper()}_{suffix}"
