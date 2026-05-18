@@ -48,6 +48,14 @@ class DocumentRepository:
         )
         return [snapshot.to_dict() or {} for snapshot in snapshots]
 
+    def create_sheet(self, document_id: str, sheet_id: str, payload: dict) -> None:
+        self.collection.document(document_id).collection("sheets").document(sheet_id).set(payload)
+
+    def create_embedded_image(self, document_id: str, image_id: str, payload: dict) -> None:
+        self.collection.document(document_id).collection("embedded_images").document(image_id).set(
+            payload
+        )
+
     def list_recent_with_metric(self, metric_name: str, limit: int) -> list[dict]:
         snapshots = (
             self.collection.order_by("updated_at", direction=firestore.Query.DESCENDING)

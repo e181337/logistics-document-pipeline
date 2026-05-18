@@ -7,6 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
+from app.services.excel import EXCEL_CONTENT_TYPES, ExcelService
 from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
 from app.services.storage import StorageService
@@ -62,7 +63,13 @@ class PreprocessService:
         )
 
         metadata = self.storage.get_metadata(file_uri)
-        document_shape = self.inspect_document(file_uri, metadata.content_type)
+        document_shape = self.inspect_document(
+            document_id=document_id,
+            tenant_id=document["tenant_id"],
+            trace_id=document.get("trace_id", ""),
+            file_uri=file_uri,
+            content_type=metadata.content_type,
+        )
         next_step = next_step_after_preprocess(document_shape)
         completed_at = datetime.now(timezone.utc)
         self.repository.update(
@@ -98,6 +105,11 @@ class PreprocessService:
                 topic_name=settings().pubsub_document_split_requested_topic,
                 payload=event_payload,
             )
+        elif next_step == "extraction":
+            self.event_publisher.publish_extraction_requested(
+                topic_name=settings().pubsub_extraction_requested_topic,
+                payload=event_payload,
+            )
         else:
             self.event_publisher.publish_ocr_requested(
                 topic_name=settings().pubsub_ocr_requested_topic,
@@ -106,7 +118,14 @@ class PreprocessService:
 
         return {"document_id": document_id, "status": "PREPROCESSED"}
 
-    def inspect_document(self, file_uri: str, content_type: str | None) -> dict[str, Any]:
+    def inspect_document(
+        self,
+        document_id: str,
+        tenant_id: str,
+        trace_id: str,
+        file_uri: str,
+        content_type: str | None,
+    ) -> dict[str, Any]:
         if content_type and content_type.startswith("image/"):
             image_bytes = self.storage.download_bytes(file_uri)
             try:
@@ -136,6 +155,15 @@ class PreprocessService:
                 "page_count": page_count,
             }
 
+        if content_type in EXCEL_CONTENT_TYPES:
+            excel = ExcelService().parse_workbook(
+                document_id=document_id,
+                tenant_id=tenant_id,
+                trace_id=trace_id,
+                file_uri=file_uri,
+            )
+            return excel
+
         return {
             "document_kind": "unknown",
         }
@@ -148,4 +176,6 @@ def next_step_after_preprocess(document_shape: dict[str, Any]) -> str:
         and document_shape["page_count"] > PDF_SPLIT_PAGE_THRESHOLD
     ):
         return "split"
+    if document_shape.get("document_kind") == "excel":
+        return "extraction"
     return "ocr"

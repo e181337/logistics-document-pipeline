@@ -7,6 +7,7 @@ from app.repositories import DocumentRepository
 from app.services.events import EventPublisher
 from app.services.metrics import mark_step_metric
 from app.services.pubsub import PubSubMessageError, decode_pubsub_payload, require_value
+from app.services.storage import StorageService
 from app.services.workflow import mark_step_completed, mark_step_processing
 
 
@@ -100,6 +101,7 @@ class ExtractionService:
         self.repository = DocumentRepository()
         self.genai = genai_client()
         self.event_publisher = EventPublisher()
+        self.storage = StorageService()
 
     def handle_pubsub_push(self, envelope: dict[str, Any]) -> dict[str, str]:
         payload = decode_pubsub_payload(envelope)
@@ -112,9 +114,9 @@ class ExtractionService:
         if document.get("status") in TERMINAL_EXTRACTION_STATUSES:
             return {"document_id": document_id, "status": document["status"]}
 
-        ocr = document.get("ocr")
-        if not isinstance(ocr, dict) or not isinstance(ocr.get("text"), str):
-            raise PubSubMessageError(f"OCR text not found for document: {document_id}")
+        source_text = self.document_text_for_extraction(document)
+        if not source_text:
+            raise PubSubMessageError(f"Extractable text not found for document: {document_id}")
 
         started_at = datetime.now(timezone.utc)
         self.repository.update(
@@ -126,7 +128,7 @@ class ExtractionService:
             },
         )
 
-        fields = self.extract_bill_of_lading_fields(ocr["text"])
+        fields = self.extract_bill_of_lading_fields(source_text)
         completed_at = datetime.now(timezone.utc)
         self.repository.update(
             document_id,
@@ -156,6 +158,23 @@ class ExtractionService:
 
         return {"document_id": document_id, "status": "EXTRACTION_COMPLETED"}
 
+    def document_text_for_extraction(self, document: dict[str, Any]) -> str:
+        ocr = document.get("ocr")
+        if isinstance(ocr, dict) and isinstance(ocr.get("text"), str):
+            return ocr["text"]
+
+        preprocess = document.get("preprocess")
+        if isinstance(preprocess, dict):
+            parsed_text_uri = preprocess.get("parsed_text_uri")
+            if isinstance(parsed_text_uri, str) and parsed_text_uri:
+                return self.storage.download_text(parsed_text_uri)
+
+            parsed_text_preview = preprocess.get("parsed_text_preview")
+            if isinstance(parsed_text_preview, str):
+                return parsed_text_preview
+
+        return ""
+
     def extract_bill_of_lading_fields(self, text: str) -> dict[str, Any]:
         prompt = build_extraction_prompt(text)
         response = self.genai.models.generate_content(
@@ -181,16 +200,16 @@ class ExtractionService:
 
 def build_extraction_prompt(text: str) -> str:
     return f"""
-Extract structured fields from OCR text of a logistics Bill of Lading.
+Extract structured fields from document text of a logistics Bill of Lading.
 
 Follow the provided response schema exactly.
 Use null for missing or uncertain scalar values.
 Use an empty array for missing list values.
-Do not invent values that are not supported by the OCR text.
+Do not invent values that are not supported by the document text.
 Preserve identifiers, names, dates, and units exactly as they appear when possible.
 For freight_terms, use one of: prepaid, collect, third_party, or null.
 
-OCR text:
+Document text:
 ---
 {text}
 ---

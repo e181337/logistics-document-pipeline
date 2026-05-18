@@ -64,6 +64,9 @@ class StorageService:
         blob = bucket.blob(object_name)
         return blob.download_as_bytes()
 
+    def download_text(self, file_uri: str) -> str:
+        return self.download_bytes(file_uri).decode("utf-8")
+
 
 def parse_gcs_uri(file_uri: str) -> tuple[str, str]:
     parsed = urlparse(file_uri)

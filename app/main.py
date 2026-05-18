@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from app.gcp_clients import settings
 from app.repositories import DocumentRepository, ReviewTaskRepository
 from app.services.errors import NonRetryablePipelineError
+from app.services.excel import EXCEL_CONTENT_TYPES
 from app.services.events import EventPublisher
 from app.services.extraction import ExtractionService
 from app.services.failures import PipelineFailureRecorder
@@ -34,6 +35,7 @@ ALLOWED_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
     "image/tiff",
+    *EXCEL_CONTENT_TYPES,
 }
 
 

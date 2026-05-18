@@ -4,7 +4,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 
 ## Current Scope
 
-- Upload an invoice image/PDF through an API.
+- Upload an invoice image/PDF/Excel workbook through an API.
 - Store the file in Cloud Storage.
 - Create a document state record in Firestore.
 - Publish a `document.uploaded` event to Pub/Sub.
@@ -12,6 +12,7 @@ Small learning project for an async document-processing pipeline on Google Cloud
 - Update Firestore status from `UPLOADED` to `PREPROCESSED`.
 - Extract basic preprocess metadata such as image width, height, format, and page count.
 - Route multi-page PDFs through page-level fan-out/fan-in OCR.
+- Parse Excel workbooks, store sheet metadata, extract embedded images, and route parsed workbook text to extraction.
 - Publish an `ocr.requested` event after preprocess.
 - Run OCR with Google Cloud Vision and store extracted text in Firestore.
 - Publish an `extraction.requested` event after OCR.
@@ -36,13 +37,18 @@ POST /invoices
   -> Push subscription
   -> POST /workers/preprocess
   -> Firestore status: PREPROCESSED
-  -> Pub/Sub topic: ocr.requested | document.split.requested
+  -> Pub/Sub topic: ocr.requested | document.split.requested | extraction.requested
   -> For multi-page PDFs:
        -> POST /workers/split
        -> Pub/Sub topic: page.ocr.requested per page
        -> POST /workers/page-ocr
        -> Pub/Sub topic: ocr.aggregate.requested when all pages complete
        -> POST /workers/ocr-aggregate
+  -> For Excel workbooks:
+       -> Parse workbook sheets and embedded images
+       -> Store parsed workbook text in Cloud Storage
+       -> Store sheet/image metadata in Firestore subcollections
+       -> Pub/Sub topic: extraction.requested
   -> Push subscription
   -> POST /workers/ocr
   -> Firestore status: OCR_COMPLETED
@@ -152,6 +158,14 @@ Upload a sample invoice:
 ```bash
 curl -X POST http://127.0.0.1:8000/invoices \
   -F "file=@/path/to/invoice.pdf" \
+  -F "tenant_id=demo-tenant"
+```
+
+Upload the sample Excel workbook:
+
+```bash
+curl -X POST http://127.0.0.1:8000/invoices \
+  -F "file=@samples/logistics_excel_with_image.xlsx" \
   -F "tenant_id=demo-tenant"
 ```
 
